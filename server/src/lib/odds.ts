@@ -8,41 +8,39 @@ export function calculateOutcomeOdds(outcomeBets: number, totalBets: number): nu
 }
 
 /**
- * Calculate winnings for a user on a specific market
- * If user bet on winning outcome, winnings = bet amount * (total_bets / winning_bets)
- * Otherwise, winnings = 0
+ * Distribute a total pool among winners proportionally to their stake.
+ * Uses the largest-remainder method so sum(payouts) === totalPool exactly (in cents).
+ *
+ * Formula per winner: (stake_i / totalWinningStake) * totalPool
+ *
+ * Edge cases:
+ * - No winners (empty array or totalWinningStake === 0): returns []
+ * - No bets at all (totalPool === 0): every payout is 0
  */
-export function calculateUserWinnings(
-  betAmount: number,
-  winningOutcomeTotalBets: number,
-  totalMarketBets: number,
-): number {
-  if (winningOutcomeTotalBets === 0) return 0;
-  const multiplier = totalMarketBets / winningOutcomeTotalBets;
-  return Number((betAmount * multiplier).toFixed(2));
-}
+export function distributePayouts(
+  winners: Array<{ userId: number; amount: number }>,
+  totalPool: number,
+  totalWinningStake: number,
+): Array<{ userId: number; payout: number }> {
+  if (winners.length === 0 || totalWinningStake === 0) return [];
 
-/**
- * Calculate total winnings for a user across all resolved markets
- */
-export function calculateTotalWinnings(
-  userBets: Array<{
-    amount: number;
-    outcome_id: number;
-    resolved_outcome_id: number | null;
-  }>,
-  betsPerOutcome: Map<number, number>,
-  totalBetsPerMarket: Map<string, number>,
-): number {
-  return userBets.reduce((total, bet) => {
-    if (bet.resolved_outcome_id === null) return total;
-    if (bet.outcome_id !== bet.resolved_outcome_id) return total;
+  // Work in integer cents to avoid floating-point drift
+  const poolCents = Math.round(totalPool * 100);
 
-    const winningBets = betsPerOutcome.get(bet.outcome_id) || 0;
-    const totalBets = totalBetsPerMarket.get(String(bet.outcome_id)) || 0;
+  const items = winners.map((w) => {
+    const exactCents = (w.amount / totalWinningStake) * poolCents;
+    const flooredCents = Math.floor(exactCents);
+    return { userId: w.userId, flooredCents, frac: exactCents - flooredCents };
+  });
 
-    if (winningBets === 0) return total;
-    const multiplier = totalBets / winningBets;
-    return total + Number((bet.amount * multiplier).toFixed(2));
-  }, 0);
+  // Largest-remainder: give extra cents to winners with the highest fractional parts
+  let remainderCents = poolCents - items.reduce((s, i) => s + i.flooredCents, 0);
+  items.sort((a, b) => b.frac - a.frac);
+  for (const item of items) {
+    if (remainderCents <= 0) break;
+    item.flooredCents += 1;
+    remainderCents -= 1;
+  }
+
+  return items.map((i) => ({ userId: i.userId, payout: i.flooredCents / 100 }));
 }

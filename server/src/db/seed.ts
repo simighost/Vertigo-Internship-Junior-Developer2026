@@ -1,98 +1,269 @@
+/**
+ * Demo seed — small, fast, fully consistent.
+ *
+ * 8 users (1 admin), 15 resolved markets, 35 active markets.
+ * All balances are exact: starting_balance - bets_placed + payouts_received.
+ * Leaderboard is meaningful: alice is the clear top winner, frank loses heavily.
+ * Pagination is testable: 35 active markets (>20), most users have >20 bets.
+ */
+
 import { Database } from "bun:sqlite";
 import { faker } from "@faker-js/faker";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "./schema";
 import { hashPassword } from "../lib/auth";
-
-const db = drizzle(new Database(process.env.DB_FILE_NAME || "database.sqlite"), {
-  schema,
-});
-
-const USER_COUNT = 5_000;
-const MARKET_COUNT = 3_000;
-const SHARED_PASSWORD = "password123";
-const USER_INSERT_BATCH_SIZE = 250;
-const BET_INSERT_BATCH_SIZE = 1_000;
-const MARKET_CATEGORIES = [
-  "crypto",
-  "sports",
-  "politics",
-  "business",
-  "science",
-  "weather",
-] as const;
-const YES_NO_OUTCOMES = ["Yes", "No"];
-const MARKET_STATUS_OPTIONS = ["active", "active", "active", "resolved"] as const;
-
-type MarketStatus = (typeof MARKET_STATUS_OPTIONS)[number];
-
-type UserInsert = typeof schema.usersTable.$inferInsert;
-type UserRow = typeof schema.usersTable.$inferSelect;
-type MarketInsert = typeof schema.marketsTable.$inferInsert;
-type MarketOutcomeInsert = typeof schema.marketOutcomesTable.$inferInsert;
-type BetInsert = typeof schema.betsTable.$inferInsert;
-
-type SeededUser = {
-  id: number;
-  username: string;
-  email: string;
-  password: string;
-  remainingBalance: number;
-};
-
-type GeneratedMarket = {
-  title: string;
-  description: string;
-  status: MarketStatus;
-  outcomes: string[];
-};
-
-type CreatedMarket = {
-  id: number;
-  title: string;
-  status: MarketStatus;
-  outcomeIds: number[];
-};
+import { distributePayouts } from "../lib/odds";
 
 faker.seed(20260311);
 
-function chunkArray<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
+const db = drizzle(new Database(process.env.DB_FILE_NAME || "database.sqlite"), { schema });
 
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
+const SHARED_PASSWORD = "password123";
+const STARTING_BALANCE = 10_000;
 
-  return chunks;
-}
+// ─── Demo users ───────────────────────────────────────────────────────────────
 
-function createRandomUser(runId: string, index: number): UserInsert {
-  const sex = faker.person.sexType();
-  const firstName = faker.person.firstName(sex);
-  const lastName = faker.person.lastName();
-  const usernameBase = `${firstName}.${lastName}`.toLowerCase().replace(/[^a-z0-9]+/g, ".");
-  const username = `${usernameBase}.${runId}.${index}`;
-  const email = faker.internet.email({
-    firstName,
-    lastName,
-    provider: "seed.local",
-  });
-  const normalizedEmail = `${email.split("@")[0]}.${runId}.${index}@seed.local`.toLowerCase();
+const DEMO_USERS: Array<{ username: string; email: string; role: "admin" | "user" }> = [
+  { username: "admin",   email: "admin@demo.com",   role: "admin" },
+  { username: "alice",   email: "alice@demo.com",   role: "user"  },
+  { username: "bob",     email: "bob@demo.com",     role: "user"  },
+  { username: "charlie", email: "charlie@demo.com", role: "user"  },
+  { username: "diana",   email: "diana@demo.com",   role: "user"  },
+  { username: "eve",     email: "eve@demo.com",     role: "user"  },
+  { username: "frank",   email: "frank@demo.com",   role: "user"  },
+  { username: "grace",   email: "grace@demo.com",   role: "user"  },
+];
 
-  return {
-    username,
-    email: normalizedEmail,
-    passwordHash: "",
-  };
-}
+// ─── Resolved market specs ────────────────────────────────────────────────────
+// Betting pattern:
+//   alice  — consistently bets on the winning side (top leaderboard)
+//   bob    — mostly bets on the winning side (solid 2nd)
+//   charlie— mixed, slight edge toward winners
+//   diana  — balanced, mildly positive
+//   eve    — break-even mix
+//   frank  — consistently bets on the losing side (bottom of leaderboard)
+//   grace  — small, occasional bets; slight winner
+//   admin  — places no bets (admin account)
 
-function createMarketTitle(category: (typeof MARKET_CATEGORIES)[number]) {
+type BetSpec = { user: string; outcomeIdx: number; amount: number };
+
+type ResolvedMarketSpec = {
+  title: string;
+  description: string;
+  outcomes: string[];
+  bets: BetSpec[];
+  winnerIdx: number; // index into `outcomes`
+};
+
+const RESOLVED_MARKETS: ResolvedMarketSpec[] = [
+  {
+    title: "Will BTC trade above $100k by end of Q1 2026?",
+    description: "Resolves YES if BTC/USD closes above $100,000 on 31 Mar 2026.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 500 },
+      { user: "bob",     outcomeIdx: 0, amount: 300 },
+      { user: "charlie", outcomeIdx: 0, amount: 200 },
+      { user: "diana",   outcomeIdx: 0, amount: 150 },
+      { user: "frank",   outcomeIdx: 1, amount: 600 },
+      { user: "grace",   outcomeIdx: 0, amount: 80  },
+    ],
+  },
+  {
+    title: "Will the Lions win the NFC Championship?",
+    description: "Resolves YES if the Detroit Lions reach the Super Bowl this season.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 600 },
+      { user: "bob",     outcomeIdx: 0, amount: 250 },
+      { user: "diana",   outcomeIdx: 0, amount: 100 },
+      { user: "eve",     outcomeIdx: 1, amount: 200 },
+      { user: "frank",   outcomeIdx: 1, amount: 700 },
+    ],
+  },
+  {
+    title: "Will Austin approve the downtown transit bond?",
+    description: "Resolves using the official city council vote result.",
+    outcomes: ["Pass", "Fail"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 400 },
+      { user: "charlie", outcomeIdx: 0, amount: 300 },
+      { user: "diana",   outcomeIdx: 0, amount: 200 },
+      { user: "frank",   outcomeIdx: 1, amount: 550 },
+      { user: "grace",   outcomeIdx: 1, amount: 60  },
+    ],
+  },
+  {
+    title: "Will NovaTech launch their IPO before Q3 2026?",
+    description: "Resolves YES if NovaTech files and lists on a major exchange before 1 Jul 2026.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 350 },
+      { user: "bob",     outcomeIdx: 0, amount: 400 },
+      { user: "charlie", outcomeIdx: 1, amount: 150 },
+      { user: "frank",   outcomeIdx: 1, amount: 500 },
+      { user: "eve",     outcomeIdx: 0, amount: 100 },
+    ],
+  },
+  {
+    title: "Will fusion energy hit a net-energy milestone in 2026?",
+    description: "Resolves YES upon a publicly verified Q > 1 announcement from any major facility.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 1,
+    bets: [
+      { user: "alice",   outcomeIdx: 1, amount: 300 },
+      { user: "bob",     outcomeIdx: 1, amount: 200 },
+      { user: "charlie", outcomeIdx: 1, amount: 150 },
+      { user: "frank",   outcomeIdx: 0, amount: 450 },
+      { user: "diana",   outcomeIdx: 0, amount: 100 },
+    ],
+  },
+  {
+    title: "Will NYC record a day above 35°C this summer?",
+    description: "Resolves YES if any Central Park weather station records ≥35°C in Jun–Aug 2026.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 1,
+    bets: [
+      { user: "alice",   outcomeIdx: 1, amount: 280 },
+      { user: "bob",     outcomeIdx: 1, amount: 220 },
+      { user: "eve",     outcomeIdx: 0, amount: 180 },
+      { user: "frank",   outcomeIdx: 0, amount: 500 },
+      { user: "grace",   outcomeIdx: 1, amount: 70  },
+    ],
+  },
+  {
+    title: "Will the Storm win their next playoff match?",
+    description: "Resolves on the official match result.",
+    outcomes: ["Win", "Lose"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 450 },
+      { user: "bob",     outcomeIdx: 0, amount: 350 },
+      { user: "charlie", outcomeIdx: 0, amount: 120 },
+      { user: "frank",   outcomeIdx: 1, amount: 600 },
+      { user: "diana",   outcomeIdx: 1, amount: 100 },
+    ],
+  },
+  {
+    title: "Will Chicago approve the North Side housing measure?",
+    description: "Resolves using the official aldermanic vote.",
+    outcomes: ["Pass", "Fail"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 500 },
+      { user: "bob",     outcomeIdx: 0, amount: 300 },
+      { user: "diana",   outcomeIdx: 0, amount: 150 },
+      { user: "eve",     outcomeIdx: 0, amount: 100 },
+      { user: "frank",   outcomeIdx: 1, amount: 650 },
+    ],
+  },
+  {
+    title: "Will ETH trade above $5,000 by June 2026?",
+    description: "Resolves YES if ETH/USD closes above $5,000 on any day before 30 Jun 2026.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 1,
+    bets: [
+      { user: "alice",   outcomeIdx: 1, amount: 400 },
+      { user: "bob",     outcomeIdx: 1, amount: 250 },
+      { user: "charlie", outcomeIdx: 0, amount: 200 },
+      { user: "frank",   outcomeIdx: 0, amount: 550 },
+      { user: "grace",   outcomeIdx: 1, amount: 90  },
+    ],
+  },
+  {
+    title: "Will the Falcons win the division title?",
+    description: "Resolves on the official end-of-season standings.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 600 },
+      { user: "bob",     outcomeIdx: 0, amount: 400 },
+      { user: "charlie", outcomeIdx: 0, amount: 200 },
+      { user: "frank",   outcomeIdx: 1, amount: 800 },
+      { user: "diana",   outcomeIdx: 1, amount: 150 },
+    ],
+  },
+  {
+    title: "Will GeneCure receive FDA approval for their Phase 3 therapy?",
+    description: "Resolves YES on official FDA approval notice.",
+    outcomes: ["Approved", "Not Approved"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 200 },
+      { user: "bob",     outcomeIdx: 0, amount: 150 },
+      { user: "charlie", outcomeIdx: 0, amount: 250 },
+      { user: "diana",   outcomeIdx: 0, amount: 100 },
+      { user: "frank",   outcomeIdx: 1, amount: 400 },
+    ],
+  },
+  {
+    title: "Will Tokyo record measurable snowfall in February 2026?",
+    description: "Resolves YES if the Japan Meteorological Agency records ≥1 cm snow in Tokyo.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 250 },
+      { user: "bob",     outcomeIdx: 0, amount: 180 },
+      { user: "eve",     outcomeIdx: 0, amount: 120 },
+      { user: "frank",   outcomeIdx: 1, amount: 350 },
+      { user: "grace",   outcomeIdx: 0, amount: 60  },
+    ],
+  },
+  {
+    title: "Will RocketStart launch their consumer app before April 2026?",
+    description: "Resolves YES on App Store / Play Store public listing.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 1,
+    bets: [
+      { user: "alice",   outcomeIdx: 1, amount: 200 },
+      { user: "charlie", outcomeIdx: 0, amount: 180 },
+      { user: "diana",   outcomeIdx: 1, amount: 120 },
+      { user: "frank",   outcomeIdx: 0, amount: 300 },
+      { user: "grace",   outcomeIdx: 1, amount: 50  },
+    ],
+  },
+  {
+    title: "Will Phoenix break its all-time heat record in 2026?",
+    description: "Resolves YES if Phoenix Sky Harbor records a temperature above 50°C.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 180 },
+      { user: "bob",     outcomeIdx: 0, amount: 220 },
+      { user: "diana",   outcomeIdx: 0, amount: 130 },
+      { user: "eve",     outcomeIdx: 1, amount: 150 },
+      { user: "frank",   outcomeIdx: 1, amount: 400 },
+    ],
+  },
+  {
+    title: "Will solid-state battery tech reach commercial production in 2026?",
+    description: "Resolves YES on announcement of volume manufacturing by a major auto supplier.",
+    outcomes: ["Yes", "No"],
+    winnerIdx: 0,
+    bets: [
+      { user: "alice",   outcomeIdx: 0, amount: 350 },
+      { user: "bob",     outcomeIdx: 0, amount: 280 },
+      { user: "charlie", outcomeIdx: 0, amount: 190 },
+      { user: "diana",   outcomeIdx: 1, amount: 120 },
+      { user: "frank",   outcomeIdx: 1, amount: 480 },
+    ],
+  },
+];
+
+// ─── Active market title templates ───────────────────────────────────────────
+
+const MARKET_CATEGORIES = ["crypto", "sports", "politics", "business", "science", "weather"] as const;
+type MarketCategory = (typeof MARKET_CATEGORIES)[number];
+
+function createMarketTitle(category: MarketCategory): string {
   switch (category) {
     case "crypto":
-      return `Will ${faker.finance.currencyCode()} trade above ${faker.number.int({ min: 20, max: 250 })} by ${faker.date
-        .soon({ days: 180 })
-        .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}?`;
+      return `Will ${faker.finance.currencyCode()} trade above $${faker.number.int({ min: 20, max: 250 })} by ${faker.date.soon({ days: 180 }).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}?`;
     case "sports":
       return `Will the ${faker.helpers.arrayElement(["Lions", "Storm", "Falcons", "Tigers", "Sharks"])} win ${faker.helpers.arrayElement(["their next match", "the division", "the championship"])}?`;
     case "politics":
@@ -106,266 +277,243 @@ function createMarketTitle(category: (typeof MARKET_CATEGORIES)[number]) {
   }
 }
 
-function createMarketDescription(category: (typeof MARKET_CATEGORIES)[number]) {
+function createMarketDescription(category: MarketCategory): string {
   switch (category) {
-    case "crypto":
-      return "Speculation on a major digital asset crossing a specific price target before the deadline.";
-    case "sports":
-      return "A sports market based on an upcoming result with plenty of fan-driven volume.";
-    case "politics":
-      return "A local politics market that resolves using the official public election or vote result.";
-    case "business":
-      return "A company milestone market focused on launches, capital events, or other business developments.";
-    case "science":
-      return "A research and innovation market driven by publicly reported breakthroughs and milestones.";
-    case "weather":
-      return "A weather market tied to publicly recorded local conditions over a defined time window.";
+    case "crypto":   return "Speculation on a major digital asset crossing a specific price target.";
+    case "sports":   return "A sports market based on an upcoming result with fan-driven volume.";
+    case "politics": return "A local politics market resolving on the official public election result.";
+    case "business": return "A company milestone market focused on launches and capital events.";
+    case "science":  return "A research market driven by publicly reported breakthroughs.";
+    case "weather":  return "A weather market tied to publicly recorded local conditions.";
   }
 }
 
-function createMarketOutcomes(category: (typeof MARKET_CATEGORIES)[number]) {
+function createMarketOutcomes(category: MarketCategory): string[] {
   if (category === "sports") {
-    return faker.helpers.arrayElement([
-      ["Win", "Lose"],
-      ["Yes", "No"],
-      ["Win in regulation", "Win after overtime", "No win"],
-    ]);
+    return faker.helpers.arrayElement([["Win", "Lose"], ["Yes", "No"], ["Win in regulation", "Win after OT", "No win"]]);
   }
-
   if (category === "politics") {
-    return faker.helpers.arrayElement([
-      ["Pass", "Fail"],
-      ["Yes", "No"],
-      ["Under 50%", "50%-60%", "Over 60%"],
-    ]);
+    return faker.helpers.arrayElement([["Pass", "Fail"], ["Yes", "No"]]);
   }
-
-  if (category === "crypto" || category === "business") {
-    return faker.helpers.arrayElement([
-      YES_NO_OUTCOMES,
-      ["Below target", "Hits target", "Exceeds target"],
-    ]);
-  }
-
-  return faker.helpers.arrayElement([YES_NO_OUTCOMES, ["Yes", "No", "Unclear"]]);
+  return faker.helpers.arrayElement([["Yes", "No"], ["Yes", "No", "Unclear"]]);
 }
 
-function createRandomMarket(): GeneratedMarket {
-  const category = faker.helpers.arrayElement(MARKET_CATEGORIES);
+// ─── Bet distribution helpers for active markets ──────────────────────────────
+// Each active market gets a random subset of users with random amounts.
+// We track user balances to avoid overspending.
 
-  return {
-    title: createMarketTitle(category),
-    description: createMarketDescription(category),
-    status: faker.helpers.arrayElement(MARKET_STATUS_OPTIONS),
-    outcomes: createMarketOutcomes(category),
-  };
-}
+// ─── Core seeding logic ───────────────────────────────────────────────────────
 
 async function deleteAllData() {
   console.log("Deleting all data...");
-
   await db.delete(schema.betsTable);
   await db.delete(schema.marketOutcomesTable);
   await db.delete(schema.marketsTable);
   await db.delete(schema.usersTable);
-
   console.log("All data deleted.\n");
 }
 
 async function insertUsers() {
-  console.log(`Creating ${USER_COUNT} users...`);
-
+  console.log("Creating demo users...");
   const passwordHash = await hashPassword(SHARED_PASSWORD);
-  const runId = faker.string.alphanumeric({ length: 6, casing: "lower" });
-  const userValues = Array.from({ length: USER_COUNT }, (_, index) => {
-    const user = createRandomUser(runId, index + 1);
-    return {
-      ...user,
-      passwordHash,
-    };
-  });
-
-  const insertedUsers: UserRow[] = [];
-
-  for (const batch of chunkArray(userValues, USER_INSERT_BATCH_SIZE)) {
-    const created = await db.insert(schema.usersTable).values(batch).returning();
-    insertedUsers.push(...created);
-  }
-
-  const seededUsers: SeededUser[] = insertedUsers.map((user) => ({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    password: SHARED_PASSWORD,
-    remainingBalance: faker.number.int({ min: 500, max: 10_000 }),
-  }));
-
-  console.log(`Created ${seededUsers.length} users.`);
-
-  return seededUsers;
+  const rows = await db
+    .insert(schema.usersTable)
+    .values(
+      DEMO_USERS.map((u) => ({
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        passwordHash,
+        balance: STARTING_BALANCE,
+      })),
+    )
+    .returning();
+  console.log(`Created ${rows.length} users.`);
+  // Return a map username → row for easy lookup
+  const userMap = new Map<string, typeof rows[0]>();
+  for (const row of rows) userMap.set(row.username, row);
+  return userMap;
 }
 
-async function insertMarkets(users: SeededUser[]) {
-  console.log(`\nCreating ${MARKET_COUNT} markets with outcomes...`);
+/**
+ * Place a bet: insert the row and deduct balance.
+ * Uses the same atomicity pattern as handlePlaceBet (UPDATE ... WHERE balance >= amount).
+ */
+async function placeBet(
+  sqliteDb: Database,
+  userId: number,
+  marketId: number,
+  outcomeId: number,
+  amount: number,
+) {
+  const stmtDeduct = sqliteDb.prepare(
+    `UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?`,
+  );
+  const { changes } = stmtDeduct.run(amount, userId, amount);
+  if (changes === 0) {
+    throw new Error(`User ${userId} has insufficient balance to bet $${amount}`);
+  }
+  await db.insert(schema.betsTable).values({ userId, marketId, outcomeId, amount });
+}
 
-  const createdMarkets: CreatedMarket[] = [];
-  let createdOutcomeCount = 0;
+/**
+ * Resolve a market: distribute payouts and mark it resolved.
+ * Mirrors processMarketPayouts but uses the seed's own db connection.
+ */
+async function resolveMarket(
+  sqliteDb: Database,
+  marketId: number,
+  winnerOutcomeId: number,
+) {
+  const allBets = await db
+    .select({ userId: schema.betsTable.userId, outcomeId: schema.betsTable.outcomeId, amount: schema.betsTable.amount })
+    .from(schema.betsTable)
+    .where(eq(schema.betsTable.marketId, marketId));
 
-  for (let index = 0; index < MARKET_COUNT; index++) {
-    const marketData = createRandomMarket();
-    const creator = faker.helpers.arrayElement(users);
-    const marketInsert: MarketInsert = {
-      title: marketData.title,
-      description: marketData.description,
-      status: marketData.status,
-      createdBy: creator.id,
-    };
+  const totalPool = allBets.reduce((s, b) => s + b.amount, 0);
 
-    const [createdMarket] = await db.insert(schema.marketsTable).values(marketInsert).returning();
-    const outcomeValues: MarketOutcomeInsert[] = marketData.outcomes.map((title, position) => ({
-      marketId: createdMarket.id,
-      title,
-      position,
-    }));
-    const createdOutcomes = await db
+  const winnerStakeByUser = new Map<number, number>();
+  for (const bet of allBets) {
+    if (bet.outcomeId !== winnerOutcomeId) continue;
+    winnerStakeByUser.set(bet.userId, (winnerStakeByUser.get(bet.userId) ?? 0) + bet.amount);
+  }
+
+  const winnerList = [...winnerStakeByUser.entries()].map(([userId, amount]) => ({ userId, amount }));
+  const totalWinningStake = winnerList.reduce((s, w) => s + w.amount, 0);
+  const payouts = distributePayouts(winnerList, totalPool, totalWinningStake);
+
+  const stmtResolve = sqliteDb.prepare(
+    `UPDATE markets SET status = 'resolved', resolved_outcome_id = ?, payout_status = 'completed' WHERE id = ?`,
+  );
+  const stmtCredit = sqliteDb.prepare(
+    `UPDATE users SET balance = balance + ? WHERE id = ?`,
+  );
+
+  sqliteDb.transaction(() => {
+    stmtResolve.run(winnerOutcomeId, marketId);
+    for (const p of payouts) stmtCredit.run(p.payout, p.userId);
+  })();
+}
+
+async function insertResolvedMarkets(
+  userMap: Map<string, { id: number }>,
+  sqliteDb: Database,
+) {
+  console.log(`\nCreating ${RESOLVED_MARKETS.length} resolved markets with bets...`);
+  let totalBets = 0;
+
+  for (const spec of RESOLVED_MARKETS) {
+    // Admin creates the market
+    const adminId = userMap.get("admin")!.id;
+    const [market] = await db
+      .insert(schema.marketsTable)
+      .values({ title: spec.title, description: spec.description, createdBy: adminId })
+      .returning() as [typeof schema.marketsTable.$inferSelect];
+
+    const outcomeRows = await db
       .insert(schema.marketOutcomesTable)
-      .values(outcomeValues)
+      .values(spec.outcomes.map((title, position) => ({ marketId: market.id, title, position })))
       .returning();
 
-    createdOutcomeCount += createdOutcomes.length;
-
-    const outcomeIds = createdOutcomes.map((outcome) => outcome.id);
-
-    if (marketData.status === "resolved") {
-      const resolvedOutcomeId = faker.helpers.arrayElement(outcomeIds);
-
-      await db
-        .update(schema.marketsTable)
-        .set({ resolvedOutcomeId })
-        .where(eq(schema.marketsTable.id, createdMarket.id));
+    // Place bets
+    for (const betSpec of spec.bets) {
+      const user = userMap.get(betSpec.user);
+      if (!user) throw new Error(`Unknown user: ${betSpec.user}`);
+      const outcome = outcomeRows[betSpec.outcomeIdx]!;
+      await placeBet(sqliteDb, user.id, market.id, outcome.id, betSpec.amount);
+      totalBets++;
     }
 
-    createdMarkets.push({
-      id: createdMarket.id,
-      title: createdMarket.title,
-      status: marketData.status,
-      outcomeIds,
-    });
-
-    if ((index + 1) % 100 === 0 || index === MARKET_COUNT - 1) {
-      console.log(`  ${index + 1}/${MARKET_COUNT} markets created`);
-    }
+    // Resolve and distribute payouts
+    const winnerOutcome = outcomeRows[spec.winnerIdx]!;
+    await resolveMarket(sqliteDb, market.id, winnerOutcome.id);
   }
 
-  console.log(`Created ${createdMarkets.length} markets and ${createdOutcomeCount} outcomes.`);
-
-  return {
-    createdMarkets,
-    createdOutcomeCount,
-  };
+  console.log(`Created ${RESOLVED_MARKETS.length} resolved markets with ${totalBets} bets.`);
 }
 
-function createBetAmount(user: SeededUser) {
-  if (user.remainingBalance <= 5) {
-    return 0;
-  }
-
-  const maxAmount = Math.min(user.remainingBalance, 250);
-  const minAmount = Math.min(5, maxAmount);
-
-  return faker.number.int({
-    min: minAmount,
-    max: maxAmount,
-    multipleOf: 5,
-  });
-}
-
-async function insertBets(users: SeededUser[], markets: CreatedMarket[]) {
-  console.log("\nCreating bets...");
-
-  const betValues: BetInsert[] = [];
-
-  for (const market of markets) {
-    const participantCount = faker.number.int({ min: 8, max: 40 });
-    const participants = faker.helpers.arrayElements(
-      users.filter((user) => user.remainingBalance >= 5),
-      participantCount,
-    );
-
-    for (const user of participants) {
-      const betCountForUser = faker.number.int({ min: 1, max: 3 });
-
-      for (let index = 0; index < betCountForUser; index++) {
-        if (user.remainingBalance < 5) {
-          break;
-        }
-
-        const amount = createBetAmount(user);
-
-        if (amount < 5) {
-          break;
-        }
-
-        const outcomeId = faker.helpers.arrayElement(market.outcomeIds);
-        const createdAt = faker.date.between({
-          from: new Date("2025-01-01T00:00:00.000Z"),
-          to: new Date(),
-        });
-
-        betValues.push({
-          userId: user.id,
-          marketId: market.id,
-          outcomeId,
-          amount,
-          createdAt,
-        });
-
-        user.remainingBalance -= amount;
-      }
-    }
-  }
-
-  for (const batch of chunkArray(betValues, BET_INSERT_BATCH_SIZE)) {
-    await db.insert(schema.betsTable).values(batch);
-  }
-
-  console.log(`Created ${betValues.length} bets.`);
-
-  return betValues.length;
-}
-
-function printSeedSummary(
-  users: SeededUser[],
-  marketCount: number,
-  outcomeCount: number,
-  betCount: number,
+async function insertActiveMarkets(
+  userMap: Map<string, { id: number; balance?: number }>,
+  sqliteDb: Database,
 ) {
-  console.log("\n============================================================");
-  console.log("SEEDING COMPLETE");
-  console.log("============================================================");
-  console.log(`Users:    ${users.length}`);
-  console.log(`Markets:  ${marketCount}`);
-  console.log(`Outcomes: ${outcomeCount}`);
-  console.log(`Bets:     ${betCount}`);
+  const ACTIVE_COUNT = 35;
+  console.log(`\nCreating ${ACTIVE_COUNT} active markets with bets...`);
 
-  console.log("\nSample login credentials:");
-  for (const user of users.slice(0, 5)) {
-    console.log(`  ${user.email} / ${user.password}`);
+  // Track current balances so we don't overspend
+  const balances = new Map<string, number>();
+  for (const [name] of userMap) balances.set(name, STARTING_BALANCE);
+
+  // Re-read actual current balances (after resolved market payouts)
+  const dbBalances = await db.select({ id: schema.usersTable.id, username: schema.usersTable.username, balance: schema.usersTable.balance }).from(schema.usersTable);
+  for (const row of dbBalances) balances.set(row.username, row.balance);
+
+  const regularUsers = DEMO_USERS.filter((u) => u.role === "user").map((u) => u.username);
+  let totalBets = 0;
+
+  for (let i = 0; i < ACTIVE_COUNT; i++) {
+    const category = faker.helpers.arrayElement(MARKET_CATEGORIES);
+    const creator = faker.helpers.arrayElement(regularUsers);
+    const creatorId = userMap.get(creator)!.id;
+
+    const [market] = await db
+      .insert(schema.marketsTable)
+      .values({
+        title: createMarketTitle(category),
+        description: createMarketDescription(category),
+        createdBy: creatorId,
+      })
+      .returning() as [typeof schema.marketsTable.$inferSelect];
+
+    const outcomes = createMarketOutcomes(category);
+    const outcomeRows = await db
+      .insert(schema.marketOutcomesTable)
+      .values(outcomes.map((title, position) => ({ marketId: market.id, title, position })))
+      .returning();
+
+    // Give this market 5–12 bets from random users
+    const betCount = faker.number.int({ min: 5, max: 12 });
+    for (let b = 0; b < betCount; b++) {
+      const bettor = faker.helpers.arrayElement(regularUsers);
+      const currentBalance = balances.get(bettor) ?? 0;
+      if (currentBalance < 20) continue;
+
+      const maxBet = Math.min(currentBalance - 10, 300);
+      const amount = faker.number.int({ min: 10, max: maxBet, multipleOf: 5 });
+      const outcome = faker.helpers.arrayElement(outcomeRows);
+
+      await placeBet(sqliteDb, userMap.get(bettor)!.id, market.id, outcome.id, amount);
+      balances.set(bettor, (balances.get(bettor) ?? 0) - amount);
+      totalBets++;
+    }
   }
 
-  console.log("\nShared password for all seeded users:");
-  console.log(`  ${SHARED_PASSWORD}`);
+  console.log(`Created ${ACTIVE_COUNT} active markets with ${totalBets} bets.`);
+}
+
+function printSeedSummary(userMap: Map<string, { username: string; email: string }>) {
+  console.log("\n============================================================");
+  console.log("SEED COMPLETE");
+  console.log("============================================================");
+  console.log(`Users:    ${userMap.size} (1 admin, ${userMap.size - 1} regular)`);
+  console.log(`Markets:  ${RESOLVED_MARKETS.length} resolved + 35 active = ${RESOLVED_MARKETS.length + 35} total`);
+  console.log("\nLogin credentials (all passwords: password123):");
+  for (const [, user] of userMap) {
+    console.log(`  ${user.email.padEnd(26)} / ${SHARED_PASSWORD}`);
+  }
+  console.log("\nLeaderboard: alice > bob > charlie > diana (frank near bottom)");
   console.log("============================================================\n");
 }
 
 async function seedDatabase() {
   console.log("Seeding database...\n");
 
-  const users = await insertUsers();
-  const { createdMarkets, createdOutcomeCount } = await insertMarkets(users);
-  const betCount = await insertBets(users, createdMarkets);
+  const userMap = await insertUsers();
+  const sqliteDb = (db.$client as Database);
 
-  printSeedSummary(users, createdMarkets.length, createdOutcomeCount, betCount);
+  await insertResolvedMarkets(userMap, sqliteDb);
+  await insertActiveMarkets(userMap, sqliteDb);
+
+  printSeedSummary(userMap);
 }
 
 async function main() {
@@ -380,7 +528,7 @@ async function main() {
     await deleteAllData();
   } else {
     console.log("Usage:");
-    console.log("  bun run db:seed        # Seed with generated fake data");
+    console.log("  bun run db:seed        # Seed with demo data");
     console.log("  bun run db:reset       # Delete all and reseed");
     console.log("  bun run db:delete      # Delete all data");
   }

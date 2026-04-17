@@ -18,6 +18,9 @@ export const usersTable = sqliteTable(
     username: text("username").notNull().unique(),
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
+    role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
+    balance: real("balance").notNull().default(1000),
+    apiKeyHash: text("api_key_hash"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -28,6 +31,7 @@ export const usersTable = sqliteTable(
   (table) => ({
     usernameIdx: uniqueIndex("users_username_idx").on(table.username),
     emailIdx: uniqueIndex("users_email_idx").on(table.email),
+    apiKeyHashIdx: uniqueIndex("users_api_key_hash_idx").on(table.apiKeyHash),
   }),
 );
 
@@ -48,6 +52,9 @@ export const marketsTable = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
     resolvedOutcomeId: integer("resolved_outcome_id"),
+    payoutStatus: text("payout_status", { enum: ["pending", "completed"] })
+      .notNull()
+      .default("pending"),
   },
   (table) => ({
     createdByIdx: index("markets_created_by_idx").on(table.createdBy),

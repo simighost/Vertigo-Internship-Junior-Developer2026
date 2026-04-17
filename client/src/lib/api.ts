@@ -7,8 +7,10 @@ export interface Market {
   description?: string;
   status: "active" | "resolved";
   creator?: string;
+  createdAt?: string;
   outcomes: MarketOutcome[];
   totalMarketBets: number;
+  participantCount?: number;
 }
 
 export interface MarketOutcome {
@@ -18,10 +20,25 @@ export interface MarketOutcome {
   totalBets: number;
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasNextPage: boolean;
+}
+
+export interface PaginatedMarketsResponse {
+  markets: Market[];
+  pagination: PaginationMeta;
+}
+
 export interface User {
   id: number;
   username: string;
   email: string;
+  role: "user" | "admin";
+  balance: number;
   token: string;
 }
 
@@ -31,7 +48,45 @@ export interface Bet {
   marketId: number;
   outcomeId: number;
   amount: number;
+  newBalance: number;
+  createdAt?: string;
+}
+
+export interface ActiveBet {
+  id: number;
+  marketId: number;
+  marketTitle: string;
+  outcomeId: number;
+  outcomeTitle: string;
+  amount: number;
+  currentOdds: number;
   createdAt: string;
+}
+
+export interface ResolvedBet {
+  id: number;
+  marketId: number;
+  marketTitle: string;
+  outcomeId: number;
+  outcomeTitle: string;
+  amount: number;
+  result: "win" | "loss";
+  createdAt: string;
+}
+
+export interface PaginatedBetsResponse<T> {
+  bets: T[];
+  pagination: PaginationMeta;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  totalWinnings: number;
+}
+
+export interface LeaderboardResponse {
+  leaderboard: LeaderboardEntry[];
 }
 
 // API Client
@@ -95,6 +150,17 @@ class ApiClient {
     return this.request(`/api/markets?status=${status}`);
   }
 
+  async listMarketsPaginated(
+    page: number,
+    limit: number,
+    sort: string,
+    status: string,
+  ): Promise<PaginatedMarketsResponse> {
+    return this.request(
+      `/api/markets?page=${page}&limit=${limit}&sort=${sort}&status=${status}`,
+    );
+  }
+
   async getMarket(id: number): Promise<Market> {
     return this.request(`/api/markets/${id}`);
   }
@@ -112,6 +178,34 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ outcomeId, amount }),
     });
+  }
+
+  // Profile endpoints
+  async getMe(): Promise<Pick<User, "id" | "username" | "email" | "role" | "balance"> & { hasApiKey: boolean }> {
+    return this.request("/api/profile/me");
+  }
+
+  async generateApiKey(): Promise<{ key: string; message: string }> {
+    return this.request("/api/profile/api-key", { method: "POST" });
+  }
+
+  async getLeaderboard(): Promise<LeaderboardResponse> {
+    return this.request("/api/leaderboard");
+  }
+
+  async resolveMarket(marketId: number, outcomeId: number): Promise<{ success: boolean; marketId: number; resolvedOutcomeId: number }> {
+    return this.request(`/api/markets/${marketId}/resolve`, {
+      method: "PATCH",
+      body: JSON.stringify({ outcomeId }),
+    });
+  }
+
+  async getActiveBets(page: number = 1): Promise<PaginatedBetsResponse<ActiveBet>> {
+    return this.request(`/api/profile/bets/active?page=${page}`);
+  }
+
+  async getResolvedBets(page: number = 1): Promise<PaginatedBetsResponse<ResolvedBet>> {
+    return this.request(`/api/profile/bets/resolved?page=${page}`);
   }
 }
 

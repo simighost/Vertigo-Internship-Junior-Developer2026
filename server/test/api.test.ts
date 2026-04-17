@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { eq } from "drizzle-orm";
 import { app } from "../index";
 import db from "../src/db";
+import { marketsTable } from "../src/db/schema";
 
 const BASE = "http://localhost";
 
@@ -154,16 +156,18 @@ describe("Markets", () => {
     expect(data.errors.length).toBeGreaterThan(0);
   });
 
-  it("GET /api/markets — lists markets", async () => {
+  it("GET /api/markets — lists markets (paginated)", async () => {
     const res = await app.handle(new Request(`${BASE}/api/markets`));
 
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data[0].id).toBeDefined();
-    expect(data[0].title).toBeDefined();
-    expect(data[0].outcomes).toBeDefined();
+    // Endpoint was updated to return paginated response {markets, pagination}
+    expect(Array.isArray(data.markets)).toBe(true);
+    expect(data.pagination).toBeDefined();
+    expect(data.markets.length).toBeGreaterThan(0);
+    expect(data.markets[0].id).toBeDefined();
+    expect(data.markets[0].title).toBeDefined();
+    expect(data.markets[0].outcomes).toBeDefined();
   });
 
   it("GET /api/markets/:id — returns market detail", async () => {
@@ -241,7 +245,75 @@ describe("Error handling", () => {
     const res = await app.handle(new Request(`${BASE}/nonexistent`));
 
     expect(res.status).toBe(404);
-    const data = await res.json();
+    const data = await res.json() as any;
     expect(data.error).toBe("Not found");
+  });
+});
+
+describe("Resolve market — access control", () => {
+  it("PATCH /api/markets/:id/resolve — rejects unauthenticated (401)", async () => {
+    const res = await app.handle(
+      new Request(`${BASE}/api/markets/${marketId}/resolve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcomeId }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("PATCH /api/markets/:id/resolve — rejects non-admin user (403)", async () => {
+    const res = await app.handle(
+      new Request(`${BASE}/api/markets/${marketId}/resolve`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ outcomeId }),
+      }),
+    );
+    expect(res.status).toBe(403);
+    const data = await res.json() as any;
+    expect(data.error).toMatch(/admin/i);
+  });
+});
+
+describe("Bets — post-resolution restriction", () => {
+  it("POST /api/markets/:id/bets — rejected on resolved market (400)", async () => {
+    // Create a fresh market and immediately mark it resolved via the DB
+    // (no admin user needed — we're testing the bet endpoint, not the resolve endpoint)
+    const createRes = await app.handle(
+      new Request(`${BASE}/api/markets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ title: "Market to be resolved", outcomes: ["Win", "Lose"] }),
+      }),
+    );
+    const created = await createRes.json() as any;
+
+    // Force-resolve via DB to simulate a resolved market
+    await db
+      .update(marketsTable)
+      .set({ status: "resolved", resolvedOutcomeId: created.outcomes[0].id, payoutStatus: "completed" })
+      .where(eq(marketsTable.id, created.id));
+
+    // Now try to place a bet — must be rejected
+    const betRes = await app.handle(
+      new Request(`${BASE}/api/markets/${created.id}/bets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ outcomeId: created.outcomes[0].id, amount: 10 }),
+      }),
+    );
+    expect(betRes.status).toBe(400);
+    const data = await betRes.json() as any;
+    expect(data.error).toBe("Market is not active");
   });
 });

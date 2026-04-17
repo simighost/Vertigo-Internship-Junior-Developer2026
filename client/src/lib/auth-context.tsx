@@ -6,6 +6,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (user: User) => void;
   logout: () => void;
+  updateBalance: (newBalance: number) => void;
   isAuthenticated: boolean;
 }
 
@@ -23,7 +24,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (token && userData) {
       try {
         const parsedUser = JSON.parse(userData);
-        setUser({ ...parsedUser, token });
+        // Default role to "user" for sessions created before role was added
+        setUser({ ...parsedUser, role: parsedUser.role ?? "user", balance: parsedUser.balance ?? 0, token });
       } catch {
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");
@@ -42,6 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: newUser.id,
         username: newUser.username,
         email: newUser.email,
+        role: newUser.role,
+        balance: newUser.balance,
       }),
     );
   };
@@ -52,6 +56,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("auth_user");
   };
 
+  const updateBalance = (newBalance: number) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, balance: newBalance };
+      localStorage.setItem(
+        "auth_user",
+        JSON.stringify({
+          id: updated.id,
+          username: updated.username,
+          email: updated.email,
+          role: updated.role,
+          balance: updated.balance,
+        }),
+      );
+      return updated;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -59,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
+        updateBalance,
         isAuthenticated: !!user,
       }}
     >

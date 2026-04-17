@@ -8,164 +8,212 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root";
-import { Route as IndexRouteImport } from "./routes/index";
-import { Route as MarketsNewRouteImport } from "./routes/markets/new";
-import { Route as MarketsIdRouteImport } from "./routes/markets/$id";
-import { Route as AuthRegisterRouteImport } from "./routes/auth/register";
-import { Route as AuthLogoutRouteImport } from "./routes/auth/logout";
-import { Route as AuthLoginRouteImport } from "./routes/auth/login";
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as MarketsNewRouteImport } from './routes/markets/new'
+import { Route as MarketsIdRouteImport } from './routes/markets/$id'
+import { Route as AuthRegisterRouteImport } from './routes/auth/register'
+import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
+import { Route as AuthLoginRouteImport } from './routes/auth/login'
 
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeaderboardRoute = LeaderboardRouteImport.update({
+  id: '/leaderboard',
+  path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const MarketsNewRoute = MarketsNewRouteImport.update({
-  id: "/markets/new",
-  path: "/markets/new",
+  id: '/markets/new',
+  path: '/markets/new',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const MarketsIdRoute = MarketsIdRouteImport.update({
-  id: "/markets/$id",
-  path: "/markets/$id",
+  id: '/markets/$id',
+  path: '/markets/$id',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
-  id: "/auth/register",
-  path: "/auth/register",
+  id: '/auth/register',
+  path: '/auth/register',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const AuthLogoutRoute = AuthLogoutRouteImport.update({
-  id: "/auth/logout",
-  path: "/auth/logout",
+  id: '/auth/logout',
+  path: '/auth/logout',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: "/auth/login",
-  path: "/auth/login",
+  id: '/auth/login',
+  path: '/auth/login',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/auth/login": typeof AuthLoginRoute;
-  "/auth/logout": typeof AuthLogoutRoute;
-  "/auth/register": typeof AuthRegisterRoute;
-  "/markets/$id": typeof MarketsIdRoute;
-  "/markets/new": typeof MarketsNewRoute;
+  '/': typeof IndexRoute
+  '/leaderboard': typeof LeaderboardRoute
+  '/profile': typeof ProfileRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/logout': typeof AuthLogoutRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/markets/$id': typeof MarketsIdRoute
+  '/markets/new': typeof MarketsNewRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/auth/login": typeof AuthLoginRoute;
-  "/auth/logout": typeof AuthLogoutRoute;
-  "/auth/register": typeof AuthRegisterRoute;
-  "/markets/$id": typeof MarketsIdRoute;
-  "/markets/new": typeof MarketsNewRoute;
+  '/': typeof IndexRoute
+  '/leaderboard': typeof LeaderboardRoute
+  '/profile': typeof ProfileRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/logout': typeof AuthLogoutRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/markets/$id': typeof MarketsIdRoute
+  '/markets/new': typeof MarketsNewRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/auth/login": typeof AuthLoginRoute;
-  "/auth/logout": typeof AuthLogoutRoute;
-  "/auth/register": typeof AuthRegisterRoute;
-  "/markets/$id": typeof MarketsIdRoute;
-  "/markets/new": typeof MarketsNewRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/leaderboard': typeof LeaderboardRoute
+  '/profile': typeof ProfileRoute
+  '/auth/login': typeof AuthLoginRoute
+  '/auth/logout': typeof AuthLogoutRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/markets/$id': typeof MarketsIdRoute
+  '/markets/new': typeof MarketsNewRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
+  fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | "/"
-    | "/auth/login"
-    | "/auth/logout"
-    | "/auth/register"
-    | "/markets/$id"
-    | "/markets/new";
-  fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/auth/login" | "/auth/logout" | "/auth/register" | "/markets/$id" | "/markets/new";
+    | '/'
+    | '/leaderboard'
+    | '/profile'
+    | '/auth/login'
+    | '/auth/logout'
+    | '/auth/register'
+    | '/markets/$id'
+    | '/markets/new'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/leaderboard'
+    | '/profile'
+    | '/auth/login'
+    | '/auth/logout'
+    | '/auth/register'
+    | '/markets/$id'
+    | '/markets/new'
   id:
-    | "__root__"
-    | "/"
-    | "/auth/login"
-    | "/auth/logout"
-    | "/auth/register"
-    | "/markets/$id"
-    | "/markets/new";
-  fileRoutesById: FileRoutesById;
+    | '__root__'
+    | '/'
+    | '/leaderboard'
+    | '/profile'
+    | '/auth/login'
+    | '/auth/logout'
+    | '/auth/register'
+    | '/markets/$id'
+    | '/markets/new'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  AuthLoginRoute: typeof AuthLoginRoute;
-  AuthLogoutRoute: typeof AuthLogoutRoute;
-  AuthRegisterRoute: typeof AuthRegisterRoute;
-  MarketsIdRoute: typeof MarketsIdRoute;
-  MarketsNewRoute: typeof MarketsNewRoute;
+  IndexRoute: typeof IndexRoute
+  LeaderboardRoute: typeof LeaderboardRoute
+  ProfileRoute: typeof ProfileRoute
+  AuthLoginRoute: typeof AuthLoginRoute
+  AuthLogoutRoute: typeof AuthLogoutRoute
+  AuthRegisterRoute: typeof AuthRegisterRoute
+  MarketsIdRoute: typeof MarketsIdRoute
+  MarketsNewRoute: typeof MarketsNewRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/markets/new": {
-      id: "/markets/new";
-      path: "/markets/new";
-      fullPath: "/markets/new";
-      preLoaderRoute: typeof MarketsNewRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/markets/$id": {
-      id: "/markets/$id";
-      path: "/markets/$id";
-      fullPath: "/markets/$id";
-      preLoaderRoute: typeof MarketsIdRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/auth/register": {
-      id: "/auth/register";
-      path: "/auth/register";
-      fullPath: "/auth/register";
-      preLoaderRoute: typeof AuthRegisterRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/auth/logout": {
-      id: "/auth/logout";
-      path: "/auth/logout";
-      fullPath: "/auth/logout";
-      preLoaderRoute: typeof AuthLogoutRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/auth/login": {
-      id: "/auth/login";
-      path: "/auth/login";
-      fullPath: "/auth/login";
-      preLoaderRoute: typeof AuthLoginRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leaderboard': {
+      id: '/leaderboard'
+      path: '/leaderboard'
+      fullPath: '/leaderboard'
+      preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/markets/new': {
+      id: '/markets/new'
+      path: '/markets/new'
+      fullPath: '/markets/new'
+      preLoaderRoute: typeof MarketsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/markets/$id': {
+      id: '/markets/$id'
+      path: '/markets/$id'
+      fullPath: '/markets/$id'
+      preLoaderRoute: typeof MarketsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/logout': {
+      id: '/auth/logout'
+      path: '/auth/logout'
+      fullPath: '/auth/logout'
+      preLoaderRoute: typeof AuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LeaderboardRoute: LeaderboardRoute,
+  ProfileRoute: ProfileRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthLogoutRoute: AuthLogoutRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   MarketsIdRoute: MarketsIdRoute,
   MarketsNewRoute: MarketsNewRoute,
-};
+}
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>();
+  ._addFileTypes<FileRouteTypes>()
 
-import type { getRouter } from "./router.tsx";
-import type { createStart } from "@tanstack/react-start";
-declare module "@tanstack/react-start" {
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
   interface Register {
-    ssr: true;
-    router: Awaited<ReturnType<typeof getRouter>>;
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
   }
 }

@@ -45,10 +45,18 @@ export function MarketCard({ market }: MarketCardProps) {
           ))}
         </div>
 
-        {/* Total Market Value */}
-        <div className="p-3 rounded-md border border-primary/20 bg-primary/5">
-          <p className="text-xs text-muted-foreground">Total Market Value</p>
-          <p className="text-2xl font-bold text-primary">${market.totalMarketBets.toFixed(2)}</p>
+        {/* Market Stats */}
+        <div className="p-3 rounded-md border border-primary/20 bg-primary/5 flex justify-between items-center">
+          <div>
+            <p className="text-xs text-muted-foreground">Total Market Value</p>
+            <p className="text-2xl font-bold text-primary">${market.totalMarketBets.toFixed(2)}</p>
+          </div>
+          {market.participantCount !== undefined && market.participantCount > 0 && (
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Participants</p>
+              <p className="text-lg font-semibold">{market.participantCount}</p>
+            </div>
+          )}
         </div>
 
         {/* Action Button */}

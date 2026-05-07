@@ -12,7 +12,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 export const app = new Elysia()
   .use(
     cors({
-      origin: "*",
+      origin: process.env.CORS_ORIGIN || "*",
       allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
     }),
   )

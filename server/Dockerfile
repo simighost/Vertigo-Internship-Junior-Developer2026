@@ -9,7 +9,7 @@ COPY . .
 
 RUN chmod +x /app/docker-entrypoint.sh
 
-ENV NODE_ENV=development
+ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=4001
 

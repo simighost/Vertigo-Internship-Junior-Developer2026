@@ -1,5 +1,7 @@
 const rawApiUrl = import.meta.env.VITE_API_URL || "http://localhost:4001";
-const API_BASE_URL = rawApiUrl.startsWith("http") ? rawApiUrl : `https://${rawApiUrl}`;
+const API_BASE_URL = /^https?:\/\//.test(rawApiUrl)
+  ? rawApiUrl
+  : `https://${rawApiUrl.replace(/^\/+/, "")}`;
 
 // Types
 export interface Market {

@@ -1,7 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "server/Dockerfile"
-buildContext = "server"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "/app/docker-entrypoint.sh"

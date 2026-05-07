@@ -35,9 +35,6 @@ prediction_market.db
 prediction_market.db-shm
 prediction_market.db-wal
 
-# generated drizzle migrations and metadata
-drizzle/
-
 # IntelliJ based IDEs
 .idea
 

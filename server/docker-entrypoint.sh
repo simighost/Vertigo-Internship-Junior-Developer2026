@@ -13,7 +13,9 @@ fi
 
 bun run db:migrate
 
-if [ "${SEED_DATABASE:-false}" = "true" ] && [ "$SHOULD_SEED" = "true" ]; then
+if [ "${FORCE_SEED:-false}" = "true" ]; then
+  bun run db:reset
+elif [ "${SEED_DATABASE:-false}" = "true" ] && [ "$SHOULD_SEED" = "true" ]; then
   bun run db:seed
 fi
 
